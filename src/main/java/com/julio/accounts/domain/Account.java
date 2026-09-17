@@ -64,6 +64,60 @@ public class Account {
         this.balance = amount;
     }
 
+    public void credit(BigDecimal amount) {
+        BigDecimal validAmount = normalizePositiveAmount(amount);
+
+        BigDecimal newBalance = balance.add(validAmount);
+
+        if (newBalance.precision() > 19) {
+            throw new BalanceLimitExceededException();
+        }
+
+        balance = newBalance;
+    }
+
+    public void debit(BigDecimal amount) {
+        BigDecimal validAmount = normalizePositiveAmount(amount);
+
+        if (balance.compareTo(validAmount) < 0) {
+            throw new InsufficientFundsException();
+        }
+
+        balance = balance.subtract(validAmount);
+    }
+
+    private static BigDecimal normalizePositiveAmount(
+            BigDecimal amount) {
+
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException(
+                "El monto debe ser mayor que cero"
+            );
+        }
+
+        BigDecimal normalized;
+
+        try {
+            normalized = amount.setScale(
+                2,
+                RoundingMode.UNNECESSARY
+            );
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(
+                "El monto debe poder representarse con dos decimales",
+                exception
+            );
+        }
+
+        if (normalized.precision() > 19) {
+            throw new IllegalArgumentException(
+                "El monto supera el limite permitido"
+            );
+        }
+
+        return normalized;
+    }
+
     public UUID getId() {
         return id;
     }
