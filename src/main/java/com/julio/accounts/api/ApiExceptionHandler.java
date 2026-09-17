@@ -1,5 +1,11 @@
 package com.julio.accounts.api;
 
+import com.julio.accounts.domain.InsufficientFundsException;
+import com.julio.accounts.domain.BalanceLimitExceededException;
+import com.julio.accounts.service.IdempotencyConflictException;
+import com.julio.accounts.service.InvalidTransactionRequestException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+
 import com.julio.accounts.service.AccountNotFoundException;
 
 import org.springframework.http.HttpStatus;
@@ -73,6 +79,48 @@ public class ApiExceptionHandler {
             new ApiError(
                 400,
                 "El identificador debe tener formato UUID",
+                Map.of()
+            )
+        );
+    }
+
+    @ExceptionHandler({
+        InsufficientFundsException.class,
+        BalanceLimitExceededException.class,
+        IdempotencyConflictException.class
+    })
+    public ResponseEntity<ApiError> businessConflict(
+            RuntimeException exception) {
+
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(new ApiError(
+                409,
+                exception.getMessage(),
+                Map.of()
+            ));
+    }
+
+    @ExceptionHandler(InvalidTransactionRequestException.class)
+    public ResponseEntity<ApiError> invalidTransaction(
+            InvalidTransactionRequestException exception) {
+
+        return ResponseEntity.badRequest().body(
+            new ApiError(
+                400,
+                exception.getMessage(),
+                Map.of()
+            )
+        );
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiError> missingHeader() {
+        return ResponseEntity.badRequest().body(
+            new ApiError(
+                400,
+                "Falta una cabecera obligatoria; "
+                    + "para movimientos envia Idempotency-Key",
                 Map.of()
             )
         );
