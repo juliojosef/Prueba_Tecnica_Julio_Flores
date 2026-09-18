@@ -1,4 +1,5 @@
 package com.julio.accounts.domain;
+import java.time.temporal.ChronoUnit;
 
 import jakarta.persistence.*;
 
@@ -73,7 +74,7 @@ public class Movement {
         );
         this.resultingBalance = account.getBalance();
         this.idempotencyKey = idempotencyKey;
-        this.createdAt = Instant.now();
+        this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     public Long getId() {
