@@ -29,3 +29,5 @@ target/
 .vscode/
 *.log
 .env
+
+tools/*.jar
