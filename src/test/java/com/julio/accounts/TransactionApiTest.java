@@ -30,6 +30,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.julio.accounts.dto.CreateTransactionRequest;
+import com.julio.accounts.integration.TransactionValidator;
+import com.julio.accounts.integration.ValidationRejectedException;
+import com.julio.accounts.integration.ValidationUnavailableException;
+
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:movements_test;DB_CLOSE_DELAY=-1",
     "spring.h2.console.enabled=false"
@@ -49,6 +62,9 @@ class TransactionApiTest {
 
     @Autowired
     private MovementRepository movementRepository;
+
+    @MockitoBean(enforceOverride = true)
+    private TransactionValidator validator;
 
     @BeforeEach
     void cleanDatabase() {
@@ -275,6 +291,86 @@ class TransactionApiTest {
 
         assertBalance(id, "20.00");
         assertEquals(1L, movementRepository.count());
+    }
+@Test
+    void externalFailureShouldReturn503WithoutChanges()
+            throws Exception {
+
+        UUID id = createAccount("100.00");
+
+        doThrow(new ValidationUnavailableException())
+            .when(validator)
+            .validate(
+                any(UUID.class),
+                anyString(),
+                any(CreateTransactionRequest.class)
+            );
+
+        assertRejected(
+            id, "credit-1", "CREDIT", "50.00", 503
+        );
+
+        assertBalance(id, "100.00");
+        assertEquals(0L, movementRepository.count());
+    }
+
+    @Test
+    void externalRejectionShouldReturn409WithoutChanges()
+            throws Exception {
+
+        UUID id = createAccount("100.00");
+
+        doThrow(new ValidationRejectedException())
+            .when(validator)
+            .validate(
+                any(UUID.class),
+                anyString(),
+                any(CreateTransactionRequest.class)
+            );
+
+        assertRejected(
+            id, "credit-1", "CREDIT", "50.00", 409
+        );
+
+        assertBalance(id, "100.00");
+        assertEquals(0L, movementRepository.count());
+    }
+
+    @Test
+    void replayShouldSucceedWhenValidationIsDown()
+            throws Exception {
+
+        UUID id = createAccount("100.00");
+
+        MvcResult original = send(
+            id, "credit-1", "CREDIT", "50.00"
+        );
+
+        assertEquals(201, original.getResponse().getStatus());
+
+        doThrow(new ValidationUnavailableException())
+            .when(validator)
+            .validate(
+                any(UUID.class),
+                anyString(),
+                any(CreateTransactionRequest.class)
+            );
+
+        MvcResult repeated = send(
+            id, "credit-1", "CREDIT", "50.00"
+        );
+
+        assertEquals(200, repeated.getResponse().getStatus());
+
+        assertSameBody(original, repeated);
+        assertBalance(id, "150.00");
+        assertEquals(1L, movementRepository.count());
+
+        verify(validator, times(1)).validate(
+            any(UUID.class),
+            anyString(),
+            any(CreateTransactionRequest.class)
+        );
     }
 
     private UUID createAccount(String initialBalance) {

@@ -19,6 +19,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.julio.accounts.integration.ValidationUnavailableException;
+import com.julio.accounts.integration.ValidationRejectedException;
+
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
@@ -124,5 +127,28 @@ public class ApiExceptionHandler {
                 Map.of()
             )
         );
+    }
+    @ExceptionHandler(ValidationUnavailableException.class)
+    public ResponseEntity<ApiError> validationUnavailable() {
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(new ApiError(
+                503,
+                "La validacion externa no esta disponible; "
+                    + "reintenta usando la misma clave",
+                Map.of()
+            ));
+    }
+
+    @ExceptionHandler(ValidationRejectedException.class)
+    public ResponseEntity<ApiError> validationRejected() {
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(new ApiError(
+                409,
+                "El movimiento fue rechazado por "
+                    + "la validacion externa",
+                Map.of()
+            ));
     }
 }

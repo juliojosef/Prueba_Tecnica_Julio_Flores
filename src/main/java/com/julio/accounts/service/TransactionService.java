@@ -1,15 +1,10 @@
 package com.julio.accounts.service;
 
-import com.julio.accounts.domain.Account;
-import com.julio.accounts.domain.Movement;
 import com.julio.accounts.dto.CreateTransactionRequest;
 import com.julio.accounts.dto.TransactionResponse;
-import com.julio.accounts.repository.AccountRepository;
-import com.julio.accounts.repository.MovementRepository;
+import com.julio.accounts.integration.TransactionValidator;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -17,15 +12,15 @@ import java.util.UUID;
 @Service
 public class TransactionService {
 
-    private final AccountRepository accountRepository;
-    private final MovementRepository movementRepository;
+    private final TransactionWriter writer;
+    private final TransactionValidator validator;
 
     public TransactionService(
-            AccountRepository accountRepository,
-            MovementRepository movementRepository) {
+            TransactionWriter writer,
+            TransactionValidator validator) {
 
-        this.accountRepository = accountRepository;
-        this.movementRepository = movementRepository;
+        this.writer = writer;
+        this.validator = validator;
     }
 
     public record TransactionResult(
@@ -34,7 +29,6 @@ public class TransactionService {
     ) {
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public TransactionResult execute(
             UUID accountId,
             String key,
@@ -50,52 +44,15 @@ public class TransactionService {
             );
         }
 
-        Account account = accountRepository
-            .findByIdForUpdate(accountId)
-            .orElseThrow(
-                () -> new AccountNotFoundException(accountId)
-            );
-
-        Optional<Movement> previous = movementRepository
-            .findByAccount_IdAndIdempotencyKey(accountId, key);
+        Optional<TransactionResult> previous =
+            writer.findPrevious(accountId, key, request);
 
         if (previous.isPresent()) {
-            Movement movement = previous.get();
-
-            boolean sameType =
-                movement.getType() == request.type();
-
-            boolean sameAmount =
-                movement.getAmount()
-                    .compareTo(request.amount()) == 0;
-
-            if (!sameType || !sameAmount) {
-                throw new IdempotencyConflictException();
-            }
-
-            return new TransactionResult(
-                TransactionResponse.from(movement),
-                true
-            );
+            return previous.get();
         }
 
-        switch (request.type()) {
-            case CREDIT -> account.credit(request.amount());
-            case DEBIT -> account.debit(request.amount());
-        }
+        validator.validate(accountId, key, request);
 
-        Movement movement = new Movement(
-            account,
-            request.type(),
-            request.amount(),
-            key
-        );
-
-        movementRepository.saveAndFlush(movement);
-
-        return new TransactionResult(
-            TransactionResponse.from(movement),
-            false
-        );
+        return writer.apply(accountId, key, request);
     }
 }
